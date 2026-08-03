@@ -35,6 +35,68 @@ describe("Azure store backend", function () {
       assert.strictEqual(uploaded, RAW);
     });
 
+    it("calls create with the correct byte length", async function () {
+      let capturedLength;
+      const fileClient = {
+        create: async (len) => { capturedLength = len; },
+        uploadRange: async () => {}
+      };
+      function makeDirClient() {
+        return {
+          createIfNotExists: async () => {},
+          getDirectoryClient: () => makeDirClient(),
+          getFileClient: () => fileClient,
+        };
+      }
+
+      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
+
+      assert.strictEqual(capturedLength, Buffer.from(RAW).length);
+    });
+
+    it("calls uploadRange with offset 0 and correct length", async function () {
+      let capturedArgs;
+      const fileClient = {
+        create: async () => {},
+        uploadRange: async (...args) => { capturedArgs = args; }
+      };
+      function makeDirClient() {
+        return {
+          createIfNotExists: async () => {},
+          getDirectoryClient: () => makeDirClient(),
+          getFileClient: () => fileClient,
+        };
+      }
+
+      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
+
+      const [, offset, length] = capturedArgs;
+      assert.strictEqual(offset, 0);
+      assert.strictEqual(length, Buffer.from(RAW).length);
+    });
+
+    it("handles a flat job name (single directory, no nesting)", async function () {
+      let directoriesCreated = 0;
+      let capturedFileName;
+      const fileClient = {
+        create: async () => {},
+        uploadRange: async () => {}
+      };
+      function makeDirClient() {
+        return {
+          createIfNotExists: async () => { directoriesCreated++; },
+          getDirectoryClient: () => makeDirClient(),
+          getFileClient: (name) => { capturedFileName = name; return fileClient; },
+        };
+      }
+
+      await storeWithClient({rootDirectoryClient: makeDirClient()}, "PR-1", "21", RAW);
+
+      // "PR-1/21.txt" → one directory segment created
+      assert.strictEqual(directoriesCreated, 1);
+      assert.strictEqual(capturedFileName, "21.txt");
+    });
+
     it("derives the correct file path from jobName and buildId", async function () {
       let capturedFileName;
       const fileClient = {
