@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -136,11 +135,7 @@ func putFile(ctx context.Context, shareClient *share.Client, filePath string, co
 		}
 	}
 
-	fileClient := dirClient.NewFileClient(fileName)
-	if _, err := fileClient.Create(ctx, int64(len(content)), nil); err != nil {
-		return fmt.Errorf("create file %q: %w", fileName, err)
-	}
-	if _, err := fileClient.UploadRange(ctx, 0, &nopCloser{bytes.NewReader(content)}, nil); err != nil {
+	if err := dirClient.NewFileClient(fileName).UploadBuffer(ctx, content, nil); err != nil {
 		return fmt.Errorf("upload file %q: %w", fileName, err)
 	}
 	return nil
@@ -154,10 +149,6 @@ func probe(ctx context.Context) error {
 	_, err = shareClient.GetProperties(ctx, nil)
 	return err
 }
-
-type nopCloser struct{ *bytes.Reader }
-
-func (nopCloser) Close() error { return nil }
 
 // --- helpers ---
 
