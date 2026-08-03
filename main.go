@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -17,7 +18,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/share"
 )
 
-const version = "2.0.0"
+func buildVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, s := range info.Settings {
+			if s.Key == "vcs.revision" {
+				return s.Value[:7]
+			}
+		}
+	}
+	return "dev"
+}
 
 func main() {
 	port := os.Getenv("PORT")
@@ -50,7 +60,7 @@ func main() {
 // --- handlers ---
 
 func handleLiveness(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "OK", "version": version})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "OK", "version": buildVersion()})
 }
 
 func handleReadiness(w http.ResponseWriter, r *http.Request) {
