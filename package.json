@@ -1,14 +1,14 @@
 {
   "name": "bom-results-publisher",
   "version": "1.0.0",
-  "description": "Receives BOM test results from Jenkins and stores them in a GitHub repository",
+  "description": "Receives BOM test results from Jenkins and stores them in an Azure File Share",
   "private": true,
   "type": "module",
   "main": "index.js",
   "scripts": {
     "lint": "eslint .",
-    "dev": "nodemon index.js",
-    "test": "mocha -R mocha-multi-reporters"
+
+    "test": "mocha"
   },
   "repository": {
     "type": "git",
@@ -21,26 +21,16 @@
   },
   "homepage": "https://github.com/jenkins-infra/community-functions#readme",
   "devDependencies": {
-    "@babel/core": "^7.22.10",
-    "@babel/eslint-parser": "^7.22.10",
     "eslint": "^8.48.0",
     "eslint-plugin-import": "^2.27.5",
     "eslint-plugin-mocha": "^10.1.0",
     "mocha": "^11.8.0",
-    "mocha-multi-reporters": "^1.1.7",
-    "nodemon": "^3.0.0",
     "simple-mock": "^0.8.0"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
     "@azure/storage-file-share": "^12.32.0",
-    "@babel/preset-env": "^7.23.2",
-    "bcrypt": "^5.1.0",
-    "body-parser": "^1.20.2",
     "express": "^4.18.2",
-    "express-async-wrap": "^1.0.0",
-    "express-winston": "^4.0.5",
-    "helmet": "^7.0.0",
-    "winston": "^3.11.0"
+    "helmet": "^7.0.0"
   }
 }
