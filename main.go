@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -92,6 +93,14 @@ func handleBomResults(presharedKey []byte) http.HandlerFunc {
 			http.Error(w, "Missing required fields: job_name, build_id, results", http.StatusBadRequest)
 			return
 		}
+		if err := validateJobName(body.JobName); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateBuildID(body.BuildID); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 
 		log.Printf("Storing results for %s build %s", body.JobName, body.BuildID)
 		if err := storeResults(r.Context(), body.JobName, body.BuildID, body.Results); err != nil {
@@ -159,6 +168,30 @@ func probe(ctx context.Context) error {
 	}
 	_, err = shareClient.GetProperties(ctx, nil)
 	return err
+}
+
+// --- validation ---
+
+var (
+	reJobName = regexp.MustCompile(`^[a-zA-Z0-9_./-]+$`)
+	reBuildID = regexp.MustCompile(`^[0-9]+$`)
+)
+
+func validateJobName(s string) error {
+	if !reJobName.MatchString(s) {
+		return fmt.Errorf("job_name contains invalid characters")
+	}
+	if strings.Contains(s, "..") {
+		return fmt.Errorf("job_name must not contain '..'")
+	}
+	return nil
+}
+
+func validateBuildID(s string) error {
+	if !reBuildID.MatchString(s) {
+		return fmt.Errorf("build_id must be numeric")
+	}
+	return nil
 }
 
 // --- helpers ---

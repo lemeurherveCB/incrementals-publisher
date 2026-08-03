@@ -69,6 +69,36 @@ func TestBomResultsMissingFields(t *testing.T) {
 	}
 }
 
+func TestValidateJobName(t *testing.T) {
+	valid := []string{"Plugins/bom/PR-1", "my-job", "job_1", "a.b/c"}
+	for _, s := range valid {
+		if err := validateJobName(s); err != nil {
+			t.Errorf("%q: unexpected error: %v", s, err)
+		}
+	}
+	invalid := []string{"../etc/passwd", "job/../secret", "job name", "job;drop", ""}
+	for _, s := range invalid {
+		if err := validateJobName(s); err == nil {
+			t.Errorf("%q: expected error, got none", s)
+		}
+	}
+}
+
+func TestValidateBuildID(t *testing.T) {
+	valid := []string{"1", "21", "1000"}
+	for _, s := range valid {
+		if err := validateBuildID(s); err != nil {
+			t.Errorf("%q: unexpected error: %v", s, err)
+		}
+	}
+	invalid := []string{"abc", "1a", "1.0", "", "-1"}
+	for _, s := range invalid {
+		if err := validateBuildID(s); err == nil {
+			t.Errorf("%q: expected error, got none", s)
+		}
+	}
+}
+
 func TestSecureHeaders(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
