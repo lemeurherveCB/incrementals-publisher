@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -19,7 +21,7 @@ import (
 const version = "2.0.0"
 
 func main() {
-	port := getenv("PORT", "3000")
+	port := cmp.Or(os.Getenv("PORT"), "3000")
 	presharedKey := os.Getenv("PRESHARED_KEY")
 	if presharedKey == "" {
 		log.Fatal("PRESHARED_KEY is required")
@@ -124,19 +126,16 @@ func storeResults(ctx context.Context, jobName, buildID, rawText string) error {
 }
 
 func putFile(ctx context.Context, shareClient *share.Client, filePath string, content []byte) error {
-	parts := strings.Split(filePath, "/")
-	fileName := parts[len(parts)-1]
-
 	dirClient := shareClient.NewRootDirectoryClient()
-	for _, part := range parts[:len(parts)-1] {
+	for _, part := range strings.Split(path.Dir(filePath), "/") {
 		dirClient = dirClient.NewSubdirectoryClient(part)
 		if _, err := dirClient.Create(ctx, nil); err != nil && !fileerror.HasCode(err, fileerror.ResourceAlreadyExists) {
 			return fmt.Errorf("create directory %q: %w", part, err)
 		}
 	}
 
-	if err := dirClient.NewFileClient(fileName).UploadBuffer(ctx, content, nil); err != nil {
-		return fmt.Errorf("upload file %q: %w", fileName, err)
+	if err := dirClient.NewFileClient(path.Base(filePath)).UploadBuffer(ctx, content, nil); err != nil {
+		return fmt.Errorf("upload file %q: %w", path.Base(filePath), err)
 	}
 	return nil
 }
@@ -175,11 +174,4 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	if err := json.NewEncoder(w).Encode(v); err != nil {
 		log.Printf("writeJSON error: %v", err)
 	}
-}
-
-func getenv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
 }
