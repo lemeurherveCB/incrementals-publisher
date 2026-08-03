@@ -5,37 +5,71 @@ const RAW = "name=foo-plugin:weekly;failCount=0;skipCount=0;passCount=8;totalCou
 
 describe("GitHub store backend", function () {
   describe("storeWithClient", function () {
-    it("creates a new file when none exists (404)", async function () {
+    it("writes both the build file and latest.txt", async function () {
       const err404 = Object.assign(new Error("Not Found"), {status: 404});
-      let capturedArgs;
+      const calls = [];
       const mockOctokit = {
         repos: {
           getContent: async () => { throw err404; },
-          createOrUpdateFileContents: async (args) => { capturedArgs = args; return {}; }
+          createOrUpdateFileContents: async (args) => { calls.push(args); return {}; }
         }
       };
 
       await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
-      assert.ok(capturedArgs);
-      assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
-      assert.strictEqual(capturedArgs.sha, undefined);
-      assert.strictEqual(Buffer.from(capturedArgs.content, "base64").toString("utf8"), RAW);
+      assert.strictEqual(calls.length, 2);
+      assert.strictEqual(calls[0].path, "Plugins/bom/PR-1/21.txt");
+      assert.strictEqual(calls[1].path, "Plugins/bom/PR-1/latest.txt");
     });
 
-    it("overwrites an existing file using its SHA", async function () {
-      let capturedArgs;
+    it("stores identical content in both files", async function () {
+      const err404 = Object.assign(new Error("Not Found"), {status: 404});
+      const calls = [];
       const mockOctokit = {
         repos: {
-          getContent: async () => ({data: {sha: "existingsha123", content: ""}}),
-          createOrUpdateFileContents: async (args) => { capturedArgs = args; return {}; }
+          getContent: async () => { throw err404; },
+          createOrUpdateFileContents: async (args) => { calls.push(args); return {}; }
         }
       };
 
       await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
-      assert.strictEqual(capturedArgs.sha, "existingsha123");
-      assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
+      const decode = (c) => Buffer.from(c, "base64").toString("utf8");
+      assert.strictEqual(decode(calls[0].content), RAW);
+      assert.strictEqual(decode(calls[1].content), RAW);
+    });
+
+    it("creates a new build file when none exists (404)", async function () {
+      const err404 = Object.assign(new Error("Not Found"), {status: 404});
+      const calls = [];
+      const mockOctokit = {
+        repos: {
+          getContent: async () => { throw err404; },
+          createOrUpdateFileContents: async (args) => { calls.push(args); return {}; }
+        }
+      };
+
+      await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
+
+      assert.strictEqual(calls[0].sha, undefined);
+    });
+
+    it("overwrites an existing build file using its SHA", async function () {
+      const calls = [];
+      const mockOctokit = {
+        repos: {
+          getContent: async ({path}) => {
+            if (path.endsWith("21.txt")) return {data: {sha: "buildsha", content: ""}};
+            throw Object.assign(new Error("Not Found"), {status: 404});
+          },
+          createOrUpdateFileContents: async (args) => { calls.push(args); return {}; }
+        }
+      };
+
+      await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
+
+      assert.strictEqual(calls[0].sha, "buildsha");
+      assert.strictEqual(calls[1].sha, undefined);
     });
 
     it("propagates non-404 errors from getContent", async function () {

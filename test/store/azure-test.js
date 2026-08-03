@@ -5,116 +5,97 @@ import {DefaultAzureCredential} from "@azure/identity";
 
 const RAW = "name=foo-plugin:weekly;failCount=0;passCount=8;totalCount=8;duration=15.298;elapsed=39.122\n";
 
-function makeMockShareClient(overrides = {}) {
-  const fileClient = {
-    create: async () => {},
-    uploadRange: async (...args) => { fileClient._lastUpload = args; },
-    ...overrides.fileClient
-  };
-  function makeDirClient() {
+function makeMockShareClient() {
+  const writes = [];
+  function makeDirClient(prefix) {
     return {
       createIfNotExists: async () => {},
-      getDirectoryClient: () => makeDirClient(),
-      getFileClient: () => fileClient,
+      getDirectoryClient: (name) => makeDirClient(`${prefix}/${name}`),
+      getFileClient: (name) => ({
+        create: async () => {},
+        uploadRange: async (content) => {
+          writes.push({path: `${prefix}/${name}`, content: Buffer.from(content).toString("utf8")});
+        }
+      }),
     };
   }
   return {
-    rootDirectoryClient: makeDirClient(),
-    _fileClient: fileClient,
+    rootDirectoryClient: makeDirClient(""),
+    writes,
   };
 }
 
 describe("Azure store backend", function () {
   describe("storeWithClient", function () {
-    it("creates parent directories and uploads file content", async function () {
+    it("writes both the build file and latest.txt", async function () {
       const mockShare = makeMockShareClient();
 
       await storeWithClient(mockShare, "Plugins/bom/PR-1", "21", RAW);
 
-      const uploaded = Buffer.from(mockShare._fileClient._lastUpload[0]).toString("utf8");
-      assert.strictEqual(uploaded, RAW);
+      assert.strictEqual(mockShare.writes.length, 2);
+      assert.ok(mockShare.writes.some(w => w.path.endsWith("21.txt")));
+      assert.ok(mockShare.writes.some(w => w.path.endsWith("latest.txt")));
     });
 
-    it("calls create with the correct byte length", async function () {
-      let capturedLength;
-      const fileClient = {
-        create: async (len) => { capturedLength = len; },
-        uploadRange: async () => {}
-      };
-      function makeDirClient() {
-        return {
-          createIfNotExists: async () => {},
-          getDirectoryClient: () => makeDirClient(),
-          getFileClient: () => fileClient,
-        };
-      }
-
-      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
-
-      assert.strictEqual(capturedLength, Buffer.from(RAW).length);
-    });
-
-    it("calls uploadRange with offset 0 and correct length", async function () {
-      let capturedArgs;
-      const fileClient = {
-        create: async () => {},
-        uploadRange: async (...args) => { capturedArgs = args; }
-      };
-      function makeDirClient() {
-        return {
-          createIfNotExists: async () => {},
-          getDirectoryClient: () => makeDirClient(),
-          getFileClient: () => fileClient,
-        };
-      }
-
-      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
-
-      const [, offset, length] = capturedArgs;
-      assert.strictEqual(offset, 0);
-      assert.strictEqual(length, Buffer.from(RAW).length);
-    });
-
-    it("handles a flat job name (single directory, no nesting)", async function () {
-      let directoriesCreated = 0;
-      let capturedFileName;
-      const fileClient = {
-        create: async () => {},
-        uploadRange: async () => {}
-      };
-      function makeDirClient() {
-        return {
-          createIfNotExists: async () => { directoriesCreated++; },
-          getDirectoryClient: () => makeDirClient(),
-          getFileClient: (name) => { capturedFileName = name; return fileClient; },
-        };
-      }
-
-      await storeWithClient({rootDirectoryClient: makeDirClient()}, "PR-1", "21", RAW);
-
-      // "PR-1/21.txt" → one directory segment created
-      assert.strictEqual(directoriesCreated, 1);
-      assert.strictEqual(capturedFileName, "21.txt");
-    });
-
-    it("derives the correct file path from jobName and buildId", async function () {
-      let capturedFileName;
-      const fileClient = {
-        create: async () => {},
-        uploadRange: async () => {}
-      };
-      function makeDirClient() {
-        return {
-          createIfNotExists: async () => {},
-          getDirectoryClient: () => makeDirClient(),
-          getFileClient: (name) => { capturedFileName = name; return fileClient; },
-        };
-      }
-      const mockShare = {rootDirectoryClient: makeDirClient()};
+    it("stores identical content in both files", async function () {
+      const mockShare = makeMockShareClient();
 
       await storeWithClient(mockShare, "Plugins/bom/PR-1", "21", RAW);
 
-      assert.strictEqual(capturedFileName, "21.txt");
+      for (const w of mockShare.writes) {
+        assert.strictEqual(w.content, RAW);
+      }
+    });
+
+    it("calls create with the correct byte length", async function () {
+      const lengths = [];
+      function makeDirClient() {
+        return {
+          createIfNotExists: async () => {},
+          getDirectoryClient: () => makeDirClient(),
+          getFileClient: () => ({
+            create: async (len) => { lengths.push(len); },
+            uploadRange: async () => {}
+          }),
+        };
+      }
+
+      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
+
+      assert.strictEqual(lengths.length, 2);
+      assert.ok(lengths.every(l => l === Buffer.from(RAW).length));
+    });
+
+    it("calls uploadRange with offset 0 and correct length", async function () {
+      const uploadCalls = [];
+      function makeDirClient() {
+        return {
+          createIfNotExists: async () => {},
+          getDirectoryClient: () => makeDirClient(),
+          getFileClient: () => ({
+            create: async () => {},
+            uploadRange: async (...args) => { uploadCalls.push(args); }
+          }),
+        };
+      }
+
+      await storeWithClient({rootDirectoryClient: makeDirClient()}, "Plugins/bom/PR-1", "21", RAW);
+
+      assert.strictEqual(uploadCalls.length, 2);
+      for (const [, offset, length] of uploadCalls) {
+        assert.strictEqual(offset, 0);
+        assert.strictEqual(length, Buffer.from(RAW).length);
+      }
+    });
+
+    it("handles a flat job name (single directory, no nesting)", async function () {
+      const mockShare = makeMockShareClient();
+
+      await storeWithClient(mockShare, "PR-1", "21", RAW);
+
+      assert.strictEqual(mockShare.writes.length, 2);
+      assert.ok(mockShare.writes.some(w => w.path.endsWith("21.txt")));
+      assert.ok(mockShare.writes.some(w => w.path.endsWith("latest.txt")));
     });
   });
 
