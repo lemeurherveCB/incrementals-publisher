@@ -7,7 +7,7 @@ import bodyParser from "body-parser";
 import helmet from "helmet";
 import asyncWrap from "express-async-wrap";
 import config from "./lib/config.js";
-import {storeBuildResults} from "./lib/github.js";
+import {createStore} from "./lib/store/index.js";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url)));
 
@@ -48,6 +48,7 @@ app.get("/liveness", asyncWrap(async (_req, res) => {
 }));
 
 const encodedPassword = bcrypt.hashSync(config.PRESHARED_KEY, 10);
+const {store} = await createStore();
 
 async function checkAuth(req, res) {
   const token = (req.get("Authorization") || "").replace(/^Bearer /, "");
@@ -69,7 +70,7 @@ app.post("/bom-results", asyncWrap(async (req, res) => {
   }
 
   logger.info("Storing results for %s build %s", jobName, buildId);
-  await storeBuildResults(jobName, buildId, results);
+  await store(jobName, buildId, results);
   res.status(200).send("OK");
 }));
 

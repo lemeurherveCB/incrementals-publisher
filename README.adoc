@@ -2,18 +2,37 @@
 
 
 This service receives BOM test result data from Jenkins CI jobs and stores them
-as JSONL records in a GitHub repository. It acts as a trusted middleman:
-Jenkins POSTs results using a preshared bearer token, and the service uses a
-GitHub App to commit the data — so no storage credentials ever need to be
-configured on the (untrusted) CI instance.
+as plain text files, one per build. It acts as a trusted middleman: Jenkins
+POSTs results using a preshared bearer token, and the service uses privileged
+storage credentials — so no storage credentials ever need to be configured on
+the (untrusted) CI instance.
 
 The data originates from the `bom-report.txt` file produced by the
-link:https://github.com/jenkinsci/bom[jenkins-infra/bom] test harness, which
-records per-plugin test metrics in `key=value;` format.
+link:https://github.com/jenkinsci/bom[jenkins-infra/bom] test harness.
+
+Files are stored at `{job_name}/{build_id}.txt`.
 
 
 [[env]]
 == Environment Variables
+
+=== Common
+
+|===
+| Variable | Description
+
+| `STORAGE_BACKEND`
+| Storage backend to use: `github` (default) or `azure`
+
+| `PRESHARED_KEY`
+| Bearer token required to authenticate POST requests from Jenkins
+
+| `PORT`
+| Port to listen on (defaults to `3000`)
+
+|===
+
+=== GitHub backend (`STORAGE_BACKEND=github`)
 
 |===
 | Variable | Description
@@ -33,24 +52,34 @@ records per-plugin test metrics in `key=value;` format.
 | `GITHUB_REPO`
 | GitHub repository where results are stored (defaults to `results-publisher`)
 
-| `RESULTS_FILE_PATH`
-| Path within the repository to the JSONL file (defaults to `data/bom-results.jsonl`)
+|===
 
-| `PRESHARED_KEY`
-| Bearer token required to authenticate POST requests from Jenkins
-
-| `PORT`
-| Port to listen on (defaults to `3000`)
+=== Azure File Share backend (`STORAGE_BACKEND=azure`)
 
 |===
+| Variable | Description
+
+| `AZURE_STORAGE_ACCOUNT`
+| Azure Storage account name
+
+| `AZURE_STORAGE_KEY`
+| Azure Storage account key (or use workload identity — see note below)
+
+| `AZURE_STORAGE_SHARE`
+| Name of the Azure File Share
+
+|===
+
+NOTE: When running on AKS with workload identity, `AZURE_STORAGE_KEY` can be
+left unset and the SDK will pick up the managed identity automatically.
 
 
 == API
 
 === `POST /bom-results`
 
-Accepts the content of a `bom-report.txt` file and appends parsed records to
-the configured JSONL file in GitHub.
+Accepts BOM test results for a single build and stores them as a plain text
+file.
 
 *Authentication*: `Authorization: Bearer <PRESHARED_KEY>`
 
@@ -65,14 +94,7 @@ the configured JSONL file in GitHub.
 }
 ----
 
-Each line of `results` must follow the `key=value;` format produced by the BOM
-test harness, for example:
-
-----
-name=aws-credentials-plugin:weekly;failCount=0;skipCount=0;passCount=8;totalCount=8;duration=15.298;elapsed=39.122;plugins=[aws-credentials];pluginCount=1;attempt=1;build_id=21;job_base_name=PR-7078;short_commit_id=d73ef89
-----
-
-*Response*: `200 OK` with `{ "stored": <count> }` on success.
+*Response*: `200 OK` on success.
 
 === `GET /liveness`
 
