@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -21,7 +20,10 @@ import (
 const version = "2.0.0"
 
 func main() {
-	port := cmp.Or(os.Getenv("PORT"), "3000")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "3000"
+	}
 	presharedKey := os.Getenv("PRESHARED_KEY")
 	if presharedKey == "" {
 		log.Fatal("PRESHARED_KEY is required")
