@@ -62,16 +62,14 @@ Files are stored at `{job_name}/{build_id}.txt`.
 | `AZURE_STORAGE_ACCOUNT`
 | Azure Storage account name
 
-| `AZURE_STORAGE_KEY`
-| Azure Storage account key (or use workload identity — see note below)
-
 | `AZURE_STORAGE_SHARE`
 | Name of the Azure File Share
 
 |===
 
-NOTE: When running on AKS with workload identity, `AZURE_STORAGE_KEY` can be
-left unset and the SDK will pick up the managed identity automatically.
+NOTE: Authentication uses `DefaultAzureCredential` — on AKS, assign the
+workload identity a role with `Storage File Data SMB Share Contributor` on the
+storage account. No key management required.
 
 
 == API
