@@ -19,10 +19,10 @@ describe("The GitHub helpers", function () {
         }
       };
 
-      await storeBuildResultsWithClient(mockOctokit, "PR-1", "21", RAW);
+      await storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
       assert.ok(capturedArgs, "createOrUpdateFileContents should have been called");
-      assert.strictEqual(capturedArgs.path, "PR-1/21.txt");
+      assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
       assert.strictEqual(capturedArgs.sha, undefined);
       assert.strictEqual(Buffer.from(capturedArgs.content, "base64").toString("utf8"), RAW);
     });
@@ -36,10 +36,10 @@ describe("The GitHub helpers", function () {
         }
       };
 
-      await storeBuildResultsWithClient(mockOctokit, "PR-1", "21", RAW);
+      await storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
       assert.strictEqual(capturedArgs.sha, "existingsha123");
-      assert.strictEqual(capturedArgs.path, "PR-1/21.txt");
+      assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
     });
 
     it("propagates non-404 errors from getContent", async function () {
@@ -50,7 +50,7 @@ describe("The GitHub helpers", function () {
           createOrUpdateFileContents: async () => {}
         }
       };
-      await assert.rejects(() => storeBuildResultsWithClient(mockOctokit, "PR-1", "21", RAW), {status: 403});
+      await assert.rejects(() => storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW), {status: 403});
     });
   });
 });

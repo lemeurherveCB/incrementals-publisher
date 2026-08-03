@@ -62,9 +62,9 @@ async function checkAuth(req, res) {
 app.post("/bom-results", asyncWrap(async (req, res) => {
   if (!await checkAuth(req, res)) return;
 
-  const {job_base_name: jobName, build_id: buildId, results} = req.body;
+  const {job_name: jobName, build_id: buildId, results} = req.body;
   if (!jobName || !buildId || !results || typeof results !== "string") {
-    res.status(400).send("Missing required fields: job_base_name, build_id, results");
+    res.status(400).send("Missing required fields: job_name, build_id, results");
     return;
   }
 
