@@ -1,5 +1,4 @@
 import {readFile} from "fs/promises";
-import fetch from "node-fetch";
 import bcrypt from "bcrypt";
 import express from "express";
 import winston from "winston";
@@ -8,12 +7,11 @@ import bodyParser from "body-parser";
 import helmet from "helmet";
 import asyncWrap from "express-async-wrap";
 import config from "./lib/config.js";
-import {IncrementalsPlugin} from "./IncrementalsPlugin.js";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url)));
 
-const app = express()
-const port = config.PORT
+const app = express();
+const port = config.PORT;
 
 const logger = winston.createLogger({
   level: "debug",
@@ -26,52 +24,19 @@ const logger = winston.createLogger({
     winston.format.splat(),
     winston.format.printf(info => `${info.timestamp} ${info.level}: ${info.message}`)
   ),
-  exitOnError: false, // do not exit on handled exceptions
+  exitOnError: false,
 });
 
-/* Logger after routing */
 app.use(expressWinston.logger({
   winstonInstance: logger,
 }));
 
 app.use(helmet());
+app.use(bodyParser.urlencoded({extended: false}));
+app.use(bodyParser.json());
 
-// parse application/x-www-form-urlencoded
-app.use(bodyParser.urlencoded({extended: false}))
-
-// parse application/json
-app.use(bodyParser.json())
-
-const healthchecks = {
-  jenkins: async function () {
-    const jenkinsOpts = {};
-    if (!config.JENKINS_AUTH) {
-      return {jenkins: "no_auth"};
-    }
-
-    jenkinsOpts.headers = {"Authorization": "Basic " + new Buffer.from(config.JENKINS_AUTH, "utf8").toString("base64")};
-    const response = await fetch(config.JENKINS_HOST + "/whoAmI/api/json", jenkinsOpts)
-    if (response.status !== 200) {
-      throw new Error("Unable to talk to jenkins");
-    }
-    await response.json();
-    return {jenkins: "ok"}
-  }
-}
-
-app.get("/readiness", asyncWrap(async (req, res) => {
-  res.status(200);
-  let responseJson = {errors: []};
-  for (const key of Object.keys(healthchecks)) {
-    try {
-      responseJson = {...responseJson, ...(await healthchecks[key]())};
-    } catch (e) {
-      logger.error(`Healthcheck: ${e}`);
-      responseJson.errors.push(key);
-      res.status(500);
-    }
-  }
-  res.json(responseJson);
+app.get("/readiness", asyncWrap(async (_req, res) => {
+  res.status(200).json({status: "OK"});
 }));
 
 app.get("/liveness", asyncWrap(async (_req, res) => {
@@ -83,37 +48,20 @@ app.get("/liveness", asyncWrap(async (_req, res) => {
 
 const encodedPassword = bcrypt.hashSync(config.PRESHARED_KEY, 10);
 
-app.post("/", asyncWrap(async (req, res) => {
-  const authorization = (req.get("Authorization") || "").replace(/^Bearer /, "");
-  // we bcrypt so nobody can learn from timing attacks
-  // https://www.npmjs.com/package/bcrypt#a-note-on-timing-attacks
-  const check = await bcrypt.compare(authorization, encodedPassword);
-  if (!check) {
-    res.status(403).send("Not authorized");
-    return
-  }
-
-  const context = {log: logger};
-  const obj = new IncrementalsPlugin(context, {body: req.body});
-  res.send((await obj.main()).body);
-}))
-
 /*Error handler goes last */
 app.use(function (err, req, res, next) {
-  logger.error(err.stack)
+  logger.error(err.stack);
   res.status(err.status || err.code || 400).send(err.message || "Unknown error");
-  next()
-})
+  next();
+});
 
-// Handle ^C
-process.on("SIGINT", shutdown);
-
-// Do graceful shutdown
-function shutdown() {
+process.on("SIGINT", () => {
   logger.info("Got SIGINT");
   process.exit();
-}
+});
 
 app.listen(port, () => {
-  logger.info(`Incrementals listening at http://localhost:${port}`)
-})
+  logger.info(`BOM results publisher listening at http://localhost:${port}`);
+});
+
+export {app, logger, encodedPassword};
