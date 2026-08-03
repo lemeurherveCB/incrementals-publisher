@@ -3,7 +3,7 @@ import {timingSafeEqual} from "crypto";
 import express from "express";
 import helmet from "helmet";
 import config from "./lib/config.js";
-import {store} from "./lib/store/azure.js";
+import {store, probe} from "./lib/store/azure.js";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url)));
 
@@ -14,8 +14,13 @@ app.use(helmet());
 app.use(express.urlencoded({extended: false}));
 app.use(express.json());
 
-app.get("/readiness", (_req, res) => {
-  res.status(200).json({status: "OK"});
+app.get("/readiness", async (_req, res, next) => {
+  try {
+    await probe();
+    res.status(200).json({status: "OK"});
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.get("/liveness", (_req, res) => {

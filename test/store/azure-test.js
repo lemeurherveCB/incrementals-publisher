@@ -1,5 +1,5 @@
 import assert from "assert";
-import {storeWithClient, getCredential} from "../../lib/store/azure.js";
+import {storeWithClient, getCredential, probe} from "../../lib/store/azure.js";
 import {StorageSharedKeyCredential} from "@azure/storage-file-share";
 import {DefaultAzureCredential} from "@azure/identity";
 
@@ -96,6 +96,12 @@ describe("Azure store backend", function () {
       assert.strictEqual(mockShare.writes.length, 2);
       assert.ok(mockShare.writes.some(w => w.path.endsWith("21.txt")));
       assert.ok(mockShare.writes.some(w => w.path.endsWith("latest.txt")));
+    });
+  });
+
+  describe("probe", function () {
+    it("is exported as a function", function () {
+      assert.strictEqual(typeof probe, "function");
     });
   });
 
