@@ -1,20 +1,13 @@
-FROM node:24.15.0
-
-ENV NODE_ENV production
-ENV PORT 3000
-EXPOSE 3000
-
-# Create app directory
-WORKDIR /usr/src/app
-
-# Install app dependencies
-# A wildcard is used to ensure both package.json AND package-lock.json are copied
-# where available (npm@5+)
-COPY package*.json ./
-
-RUN npm ci
-
-# Bundle app source
+FROM golang:1.26-alpine AS builder
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /bom-results-publisher .
 
-CMD [ "node", "index.js" ]
+FROM scratch
+COPY --from=builder /bom-results-publisher /bom-results-publisher
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+ENV PORT=3000
+EXPOSE 3000
+ENTRYPOINT ["/bom-results-publisher"]

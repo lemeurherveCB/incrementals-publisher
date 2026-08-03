@@ -11,9 +11,7 @@ pipeline {
   }
 
   environment {
-    NODE_ENV = 'production'
     TZ = "UTC"
-    NETLIFY = "true"
   }
 
   stages {
@@ -28,41 +26,9 @@ pipeline {
       }
     }
 
-    stage('Install Dependencies') {
-      environment {
-        NODE_ENV = 'development'
-      }
-      steps {
-        sh 'npm ci'
-      }
-    }
-
-    stage('Lint') {
-      steps {
-        sh '''
-          npx eslint --format checkstyle . > eslint-results.json
-        '''
-      }
-      post {
-        always {
-          recordIssues(
-            enabledForFailure: true,
-            tools: [
-              esLint(pattern: 'eslint-results.json'),
-          ])
-        }
-      }
-    }
-
     stage('Test') {
       steps {
-        sh 'npm run test --if-present'
-      }
-    }
-
-    stage('Build') {
-      steps {
-        sh 'npm run build --if-present'
+        sh 'go test ./...'
       }
     }
 
@@ -70,7 +36,7 @@ pipeline {
       steps {
         buildDockerAndPublishImage('incrementals-publisher', [
           publishToPrivateAzureRegistry: true,
-          targetplatforms: 'linux/arm64', 
+          targetplatforms: 'linux/arm64',
           disablePublication: !infra.isInfra(),
         ])
       }

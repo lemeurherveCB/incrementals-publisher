@@ -4,26 +4,24 @@
 ifndef REGISTRY
 	override REGISTRY = halkeye
 endif
-NAME := incrementals-publisher
+NAME    := incrementals-publisher
 VERSION := latest
-NAME_VERSION := $(NAME):$(VERSION)
-TAGNAME := $(REGISTRY)/$(NAME_VERSION)
+TAGNAME := $(REGISTRY)/$(NAME):$(VERSION)
 
 .PHONY: build
 build: ## Build docker image
 	docker build -t $(TAGNAME) .
 
 .PHONY: push
-push: ## push to docker hub
+push: ## Push to registry
 	docker push $(TAGNAME)
 
-.PHONY: push
-kill: ## kill the running process
+.PHONY: kill
+kill: ## Kill running container
 	docker kill $(NAME)
 
-.SHELL := /bin/bash
 .PHONY: run
-run: ## run the docker hub
+run: ## Run via docker
 	docker run \
 		-it \
 		--rm \
@@ -32,9 +30,11 @@ run: ## run the docker hub
 		$(TAGNAME)
 
 .PHONY: test
-test: ## run tests outside of docker
-	[ -e node_modules ] || npm ci 
-	npm run test
+test: ## Run tests
+	go test ./...
+
+.PHONY: check
+check: test ## Alias for test
 
 .PHONY: help
 help:
