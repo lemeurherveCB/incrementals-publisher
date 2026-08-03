@@ -22,7 +22,7 @@ Files are stored at `{job_name}/{build_id}.txt`.
 | Variable | Description
 
 | `STORAGE_BACKEND`
-| Storage backend to use: `github` (default) or `azure`
+| Storage backend to use: `github` (default), `azure`, or `s3`
 
 | `PRESHARED_KEY`
 | Bearer token required to authenticate POST requests from Jenkins
@@ -73,6 +73,24 @@ Files are stored at `{job_name}/{build_id}.txt`.
 NOTE: On AKS with workload identity, leave `AZURE_STORAGE_KEY` unset and assign
 the identity the `Storage File Data SMB Share Contributor` role on the storage
 account.
+
+=== S3 backend (`STORAGE_BACKEND=s3`)
+
+|===
+| Variable | Description
+
+| `AWS_REGION`
+| AWS region of the S3 bucket (e.g. `us-east-1`)
+
+| `AWS_S3_BUCKET`
+| Name of the S3 bucket
+
+|===
+
+NOTE: Authentication uses the standard AWS credential chain (`AWS_ACCESS_KEY_ID`
+/ `AWS_SECRET_ACCESS_KEY` env vars, EC2 instance profile, EKS IAM role for
+service accounts, etc.). No additional configuration required when running on
+AWS infrastructure with an appropriate IAM role.
 
 
 == API
