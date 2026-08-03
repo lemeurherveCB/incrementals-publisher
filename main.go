@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -10,7 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jenkins-infra/incrementals-publisher/store"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/fileerror"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azfile/share"
 )
 
 const version = "2.0.0"
@@ -40,12 +44,14 @@ func main() {
 	}
 }
 
+// --- handlers ---
+
 func handleLiveness(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "OK", "version": version})
 }
 
 func handleReadiness(w http.ResponseWriter, r *http.Request) {
-	if err := store.Probe(r.Context()); err != nil {
+	if err := probe(r.Context()); err != nil {
 		log.Printf("readiness probe failed: %v", err)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -75,7 +81,7 @@ func handleBomResults(presharedKey []byte) http.HandlerFunc {
 		}
 
 		log.Printf("Storing results for %s build %s", body.JobName, body.BuildID)
-		if err := store.Store(r.Context(), body.JobName, body.BuildID, body.Results); err != nil {
+		if err := storeResults(r.Context(), body.JobName, body.BuildID, body.Results); err != nil {
 			log.Printf("store error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -84,9 +90,79 @@ func handleBomResults(presharedKey []byte) http.HandlerFunc {
 	}
 }
 
+// --- Azure storage ---
+
+func getShareClient() (*share.Client, error) {
+	account := os.Getenv("AZURE_STORAGE_ACCOUNT")
+	shareName := os.Getenv("AZURE_STORAGE_SHARE")
+	shareURL := fmt.Sprintf("https://%s.file.core.windows.net/%s", account, shareName)
+
+	if key := os.Getenv("AZURE_STORAGE_KEY"); key != "" {
+		cred, err := share.NewSharedKeyCredential(account, key)
+		if err != nil {
+			return nil, err
+		}
+		return share.NewClientWithSharedKeyCredential(shareURL, cred, nil)
+	}
+
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil, err
+	}
+	return share.NewClient(shareURL, cred, nil)
+}
+
+func storeResults(ctx context.Context, jobName, buildID, rawText string) error {
+	shareClient, err := getShareClient()
+	if err != nil {
+		return fmt.Errorf("get share client: %w", err)
+	}
+	content := []byte(rawText)
+	if err := putFile(ctx, shareClient, fmt.Sprintf("%s/%s.txt", jobName, buildID), content); err != nil {
+		return err
+	}
+	return putFile(ctx, shareClient, fmt.Sprintf("%s/latest.txt", jobName), content)
+}
+
+func putFile(ctx context.Context, shareClient *share.Client, filePath string, content []byte) error {
+	parts := strings.Split(filePath, "/")
+	fileName := parts[len(parts)-1]
+
+	dirClient := shareClient.NewRootDirectoryClient()
+	for _, part := range parts[:len(parts)-1] {
+		dirClient = dirClient.NewSubdirectoryClient(part)
+		if _, err := dirClient.Create(ctx, nil); err != nil && !fileerror.HasCode(err, fileerror.ResourceAlreadyExists) {
+			return fmt.Errorf("create directory %q: %w", part, err)
+		}
+	}
+
+	fileClient := dirClient.NewFileClient(fileName)
+	if _, err := fileClient.Create(ctx, int64(len(content)), nil); err != nil {
+		return fmt.Errorf("create file %q: %w", fileName, err)
+	}
+	if _, err := fileClient.UploadRange(ctx, 0, &nopCloser{bytes.NewReader(content)}, nil); err != nil {
+		return fmt.Errorf("upload file %q: %w", fileName, err)
+	}
+	return nil
+}
+
+func probe(ctx context.Context) error {
+	shareClient, err := getShareClient()
+	if err != nil {
+		return err
+	}
+	_, err = shareClient.GetProperties(ctx, nil)
+	return err
+}
+
+type nopCloser struct{ *bytes.Reader }
+
+func (nopCloser) Close() error { return nil }
+
+// --- helpers ---
+
 func checkAuth(r *http.Request, presharedKey []byte) bool {
-	auth := r.Header.Get("Authorization")
-	token, ok := strings.CutPrefix(auth, "Bearer ")
+	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok {
 		return false
 	}
