@@ -32,6 +32,7 @@
     "simple-mock": "^0.8.0"
   },
   "dependencies": {
+    "@azure/storage-file-share": "^12.32.0",
     "@babel/preset-env": "^7.23.2",
     "@octokit/auth-app": "^7.2.2",
     "@octokit/rest": "^21.1.1",

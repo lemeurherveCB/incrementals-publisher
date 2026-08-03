@@ -1,14 +1,10 @@
 import assert from "assert";
-import {getRestClient, storeBuildResultsWithClient} from "../lib/github.js";
+import {storeWithClient} from "../../lib/store/github.js";
 
 const RAW = "name=foo-plugin:weekly;failCount=0;skipCount=0;passCount=8;totalCount=8;duration=15.298;elapsed=39.122;plugins=[foo];pluginCount=1;attempt=1;build_id=21;job_base_name=PR-1;short_commit_id=abc1234\n";
 
-describe("The GitHub helpers", function () {
-  it("getRestClient is a function", function () {
-    assert.strictEqual(typeof getRestClient, "function");
-  });
-
-  describe("storeBuildResultsWithClient", function () {
+describe("GitHub store backend", function () {
+  describe("storeWithClient", function () {
     it("creates a new file when none exists (404)", async function () {
       const err404 = Object.assign(new Error("Not Found"), {status: 404});
       let capturedArgs;
@@ -19,9 +15,9 @@ describe("The GitHub helpers", function () {
         }
       };
 
-      await storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
+      await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
-      assert.ok(capturedArgs, "createOrUpdateFileContents should have been called");
+      assert.ok(capturedArgs);
       assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
       assert.strictEqual(capturedArgs.sha, undefined);
       assert.strictEqual(Buffer.from(capturedArgs.content, "base64").toString("utf8"), RAW);
@@ -36,7 +32,7 @@ describe("The GitHub helpers", function () {
         }
       };
 
-      await storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
+      await storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW);
 
       assert.strictEqual(capturedArgs.sha, "existingsha123");
       assert.strictEqual(capturedArgs.path, "Plugins/bom/PR-1/21.txt");
@@ -50,7 +46,7 @@ describe("The GitHub helpers", function () {
           createOrUpdateFileContents: async () => {}
         }
       };
-      await assert.rejects(() => storeBuildResultsWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW), {status: 403});
+      await assert.rejects(() => storeWithClient(mockOctokit, "Plugins/bom/PR-1", "21", RAW), {status: 403});
     });
   });
 });
