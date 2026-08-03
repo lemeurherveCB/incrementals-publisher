@@ -7,8 +7,7 @@ import bodyParser from "body-parser";
 import helmet from "helmet";
 import asyncWrap from "express-async-wrap";
 import config from "./lib/config.js";
-import {parseResults} from "./lib/bom-results.js";
-import {storeResults} from "./lib/github.js";
+import {storeBuildResults} from "./lib/github.js";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url)));
 
@@ -63,21 +62,15 @@ async function checkAuth(req, res) {
 app.post("/bom-results", asyncWrap(async (req, res) => {
   if (!await checkAuth(req, res)) return;
 
-  const raw = req.body.results;
-  if (!raw || typeof raw !== "string") {
-    res.status(400).send("Missing or invalid 'results' field");
+  const {job_base_name: jobName, build_id: buildId, results} = req.body;
+  if (!jobName || !buildId || !results || typeof results !== "string") {
+    res.status(400).send("Missing required fields: job_base_name, build_id, results");
     return;
   }
 
-  const entries = parseResults(raw);
-  if (entries.length === 0) {
-    res.status(400).send("No results found in payload");
-    return;
-  }
-
-  logger.info("Storing %d BOM result(s)", entries.length);
-  await storeResults(entries);
-  res.status(200).json({stored: entries.length});
+  logger.info("Storing results for %s build %s", jobName, buildId);
+  await storeBuildResults(jobName, buildId, results);
+  res.status(200).send("OK");
 }));
 
 /*Error handler goes last */
