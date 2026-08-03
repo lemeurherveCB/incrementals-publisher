@@ -1,5 +1,0 @@
-{
-    "jenkinsci/bom": [
-        "io/jenkins/tools/invalid-path"
-    ]
-}
