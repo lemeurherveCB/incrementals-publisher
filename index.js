@@ -7,7 +7,7 @@ import bodyParser from "body-parser";
 import helmet from "helmet";
 import asyncWrap from "express-async-wrap";
 import config from "./lib/config.js";
-import {createStore} from "./lib/store/index.js";
+import {store} from "./lib/store/azure.js";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url)));
 
@@ -48,7 +48,6 @@ app.get("/liveness", asyncWrap(async (_req, res) => {
 }));
 
 const encodedPassword = bcrypt.hashSync(config.PRESHARED_KEY, 10);
-const {store} = await createStore();
 
 async function checkAuth(req, res) {
   const token = (req.get("Authorization") || "").replace(/^Bearer /, "");

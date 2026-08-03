@@ -2,62 +2,29 @@
 
 
 This service receives BOM test result data from Jenkins CI jobs and stores them
-as plain text files, one per build. It acts as a trusted middleman: Jenkins
-POSTs results using a preshared bearer token, and the service uses privileged
-storage credentials — so no storage credentials ever need to be configured on
-the (untrusted) CI instance.
+as plain text files, one per build, in an Azure File Share. It acts as a
+trusted middleman: Jenkins POSTs results using a preshared bearer token, and
+the service uses Azure credentials — so no storage credentials ever need to be
+configured on the (untrusted) CI instance.
 
 The data originates from the `bom-report.txt` file produced by the
 link:https://github.com/jenkinsci/bom[jenkins-infra/bom] test harness.
 
-Files are stored at `{job_name}/{build_id}.txt`.
+Files are stored at `{job_name}/{build_id}.txt`. The file
+`{job_name}/latest.txt` is also updated on every call.
 
 
 [[env]]
 == Environment Variables
 
-=== Common
-
 |===
 | Variable | Description
-
-| `STORAGE_BACKEND`
-| Storage backend to use: `github` (default), `azure`, or `s3`
 
 | `PRESHARED_KEY`
 | Bearer token required to authenticate POST requests from Jenkins
 
 | `PORT`
 | Port to listen on (defaults to `3000`)
-
-|===
-
-=== GitHub backend (`STORAGE_BACKEND=github`)
-
-|===
-| Variable | Description
-
-| `GITHUB_APP_ID`
-| The App ID for the GitHub App used to commit results
-
-| `GITHUB_APP_PRIVATE_KEY`
-| The private key for the GitHub App
-
-| `GITHUB_APP_INSTALLATION_ID`
-| The installation ID for the organisation/user account the App is installed on (defaults to `22187127`)
-
-| `GITHUB_OWNER`
-| GitHub organisation owning the results repository (defaults to `jenkins-infra`)
-
-| `GITHUB_REPO`
-| GitHub repository where results are stored (defaults to `results-publisher`)
-
-|===
-
-=== Azure File Share backend (`STORAGE_BACKEND=azure`)
-
-|===
-| Variable | Description
 
 | `AZURE_STORAGE_ACCOUNT`
 | Azure Storage account name
@@ -73,24 +40,6 @@ Files are stored at `{job_name}/{build_id}.txt`.
 NOTE: On AKS with workload identity, leave `AZURE_STORAGE_KEY` unset and assign
 the identity the `Storage File Data SMB Share Contributor` role on the storage
 account.
-
-=== S3 backend (`STORAGE_BACKEND=s3`)
-
-|===
-| Variable | Description
-
-| `AWS_REGION`
-| AWS region of the S3 bucket (e.g. `us-east-1`)
-
-| `AWS_S3_BUCKET`
-| Name of the S3 bucket
-
-|===
-
-NOTE: Authentication uses the standard AWS credential chain (`AWS_ACCESS_KEY_ID`
-/ `AWS_SECRET_ACCESS_KEY` env vars, EC2 instance profile, EKS IAM role for
-service accounts, etc.). No additional configuration required when running on
-AWS infrastructure with an appropriate IAM role.
 
 
 == API
