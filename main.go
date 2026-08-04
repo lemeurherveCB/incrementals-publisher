@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -81,29 +82,37 @@ func handleBomResults(presharedKey []byte) http.HandlerFunc {
 		}
 
 		var body struct {
-			JobName string `json:"job_name"`
-			BuildID string `json:"build_id"`
-			Results string `json:"results"`
+			BuildURL string `json:"build_url"`
+			Results  string `json:"results"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 			return
 		}
-		if body.JobName == "" || body.BuildID == "" || body.Results == "" {
-			http.Error(w, "Missing required fields: job_name, build_id, results", http.StatusBadRequest)
+		if body.BuildURL == "" || body.Results == "" {
+			http.Error(w, "Missing required fields: build_url, results", http.StatusBadRequest)
 			return
 		}
-		if err := validateJobName(body.JobName); err != nil {
+		controller, jobName, buildID, err := parseBuildURL(body.BuildURL)
+		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := validateBuildID(body.BuildID); err != nil {
+		if err := validateController(controller); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateJobName(jobName); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := validateBuildID(buildID); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		log.Printf("Storing results for %s build %s", body.JobName, body.BuildID)
-		if err := storeResults(r.Context(), body.JobName, body.BuildID, body.Results); err != nil {
+		log.Printf("Storing results for %s/%s build %s", controller, jobName, buildID)
+		if err := storeResults(r.Context(), controller, jobName, buildID, body.Results); err != nil {
 			log.Printf("store error: %v", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -134,16 +143,17 @@ func getShareClient() (*share.Client, error) {
 	return share.NewClient(shareURL, cred, nil)
 }
 
-func storeResults(ctx context.Context, jobName, buildID, rawText string) error {
+func storeResults(ctx context.Context, controller, jobName, buildID, rawText string) error {
 	shareClient, err := getShareClient()
 	if err != nil {
 		return fmt.Errorf("get share client: %w", err)
 	}
 	content := []byte(rawText)
-	if err := putFile(ctx, shareClient, fmt.Sprintf("%s/%s.txt", jobName, buildID), content); err != nil {
+	base := controller + "/" + jobName
+	if err := putFile(ctx, shareClient, fmt.Sprintf("%s/%s.txt", base, buildID), content); err != nil {
 		return err
 	}
-	return putFile(ctx, shareClient, fmt.Sprintf("%s/latest.txt", jobName), content)
+	return putFile(ctx, shareClient, fmt.Sprintf("%s/latest.txt", base), content)
 }
 
 func putFile(ctx context.Context, shareClient *share.Client, filePath string, content []byte) error {
@@ -173,9 +183,49 @@ func probe(ctx context.Context) error {
 // --- validation ---
 
 var (
-	reJobName = regexp.MustCompile(`^[a-zA-Z0-9_./-]+$`)
-	reBuildID = regexp.MustCompile(`^[0-9]+$`)
+	reJobName  = regexp.MustCompile(`^[a-zA-Z0-9_./-]+$`)
+	reBuildID  = regexp.MustCompile(`^[0-9]+$`)
+	reHostname = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 )
+
+// parseBuildURL extracts (controller, jobName, buildID) from a Jenkins BUILD_URL.
+// Expected format: http://host[:port][/prefix]/job/NAME[/job/SEGMENT]*/NUMBER/
+func parseBuildURL(rawURL string) (controller, jobName, buildID string, err error) {
+	u, err := url.ParseRequestURI(rawURL)
+	if err != nil {
+		return "", "", "", fmt.Errorf("build_url is not a valid URL")
+	}
+	controller = u.Hostname()
+
+	segments := strings.Split(strings.Trim(u.Path, "/"), "/")
+	var jobParts []string
+	i := 0
+	for i < len(segments) {
+		if segments[i] == "job" && i+1 < len(segments) {
+			jobParts = append(jobParts, segments[i+1])
+			i += 2
+		} else {
+			i++
+		}
+	}
+	if len(jobParts) == 0 {
+		return "", "", "", fmt.Errorf("build_url: no /job/ segment found")
+	}
+	// Last element may be the build number; check if last job part is numeric.
+	// Jenkins paths end with …/job/NAME/NUMBER/ so the build number is the segment
+	// immediately after the final job/NAME pair.
+	last := segments[len(segments)-1]
+	if last == "" && len(segments) > 1 {
+		last = segments[len(segments)-2]
+	}
+	if reBuildID.MatchString(last) {
+		buildID = last
+	} else {
+		return "", "", "", fmt.Errorf("build_url: no build number found")
+	}
+	jobName = strings.Join(jobParts, "/")
+	return controller, jobName, buildID, nil
+}
 
 func validateJobName(s string) error {
 	if !reJobName.MatchString(s) {
@@ -190,6 +240,13 @@ func validateJobName(s string) error {
 func validateBuildID(s string) error {
 	if !reBuildID.MatchString(s) {
 		return fmt.Errorf("build_id must be numeric")
+	}
+	return nil
+}
+
+func validateController(s string) error {
+	if !reHostname.MatchString(s) {
+		return fmt.Errorf("build_url: controller hostname contains invalid characters")
 	}
 	return nil
 }

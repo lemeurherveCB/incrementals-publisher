@@ -58,7 +58,7 @@ func TestBomResultsMissingFields(t *testing.T) {
 	key := []byte("test-key")
 	handler := handleBomResults(key)
 
-	body := `{"job_name":"myjob","build_id":"1"}`
+	body := `{"build_url":"http://ci.jenkins.io/job/foo/15/"}`
 	r := httptest.NewRequest(http.MethodPost, "/bom-results", strings.NewReader(body))
 	r.Header.Set("Authorization", "Bearer test-key")
 	r.Header.Set("Content-Type", "application/json")
@@ -66,6 +66,55 @@ func TestBomResultsMissingFields(t *testing.T) {
 	handler(w, r)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", w.Code)
+	}
+}
+
+func TestParseBuildURL(t *testing.T) {
+	cases := []struct {
+		url        string
+		controller string
+		jobName    string
+		buildID    string
+		wantErr    bool
+	}{
+		{
+			url:        "http://ci.jenkins.io/job/foo/15/",
+			controller: "ci.jenkins.io",
+			jobName:    "foo",
+			buildID:    "15",
+		},
+		{
+			url:        "https://ci.jenkins.io/job/Plugins/job/bom/job/PR-1/153/",
+			controller: "ci.jenkins.io",
+			jobName:    "Plugins/bom/PR-1",
+			buildID:    "153",
+		},
+		{
+			url:        "https://server:8080/jenkins/job/my-job/42/",
+			controller: "server",
+			jobName:    "my-job",
+			buildID:    "42",
+		},
+		{url: "not-a-url", wantErr: true},
+		{url: "http://ci.jenkins.io/job/foo/", wantErr: true},
+		{url: "http://ci.jenkins.io/notjob/foo/15/", wantErr: true},
+	}
+	for _, tc := range cases {
+		controller, jobName, buildID, err := parseBuildURL(tc.url)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("%q: expected error, got none", tc.url)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%q: unexpected error: %v", tc.url, err)
+			continue
+		}
+		if controller != tc.controller || jobName != tc.jobName || buildID != tc.buildID {
+			t.Errorf("%q: got (%s, %s, %s), want (%s, %s, %s)",
+				tc.url, controller, jobName, buildID, tc.controller, tc.jobName, tc.buildID)
+		}
 	}
 }
 
