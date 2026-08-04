@@ -10,8 +10,10 @@ configured on the (untrusted) CI instance.
 The data originates from the `bom-report.txt` file produced by the
 link:https://github.com/jenkinsci/bom[jenkins-infra/bom] test harness.
 
-Files are stored at `{job_name}/{build_id}.txt`. The file
-`{job_name}/latest.txt` is also updated on every call.
+Files are stored at `{controller}/{job_name}/{build_id}.txt`, where
+`controller` is the hostname of the Jenkins instance extracted from
+`BUILD_URL` (e.g. `ci.jenkins.io`). The file
+`{controller}/{job_name}/latest.txt` is also updated on every call.
 
 
 [[env]]
@@ -56,8 +58,7 @@ file.
 [source,json]
 ----
 {
-  "job_name": "<Jenkins job full name, e.g. Plugins/bom/PR-1>",
-  "build_id": "<build number>",
+  "build_url": "<Jenkins BUILD_URL, e.g. https://ci.jenkins.io/job/Plugins/job/bom/job/PR-1/21/>",
   "results": "<raw bom-report.txt content>"
 }
 ----
@@ -88,8 +89,7 @@ curl -X POST http://localhost:3000/bom-results \
   -H "Authorization: Bearer ${PRESHARED_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
-    "job_name": "Plugins/bom/PR-1",
-    "build_id": "21",
+    "build_url": "https://ci.jenkins.io/job/Plugins/job/bom/job/PR-1/21/",
     "results": "name=foo-plugin:weekly;failCount=0;skipCount=0;passCount=8;totalCount=8;duration=15.298;elapsed=39.122;plugins=[foo];pluginCount=1;attempt=1;build_id=21;job_base_name=PR-1;short_commit_id=abc1234"
   }'
 ----
