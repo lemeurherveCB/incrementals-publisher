@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -134,8 +135,9 @@ type githubClient interface {
 func publishHandler(log *slog.Logger, ghClient githubClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// --- Authentication ---
+		// Use constant-time comparison to prevent timing attacks (JS used bcrypt for the same reason).
 		authHeader := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if authHeader != config.PresharedKey() {
+		if subtle.ConstantTimeCompare([]byte(authHeader), []byte(config.PresharedKey())) != 1 {
 			http.Error(w, "Not authorized", http.StatusForbidden)
 			return
 		}
