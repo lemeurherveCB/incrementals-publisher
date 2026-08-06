@@ -17,7 +17,7 @@ build: ## Build docker image
 push: ## push to docker hub
 	docker push $(TAGNAME)
 
-.PHONY: push
+.PHONY: kill
 kill: ## kill the running process
 	docker kill $(NAME)
 
@@ -32,9 +32,12 @@ run: ## run the docker hub
 		$(TAGNAME)
 
 .PHONY: test
-test: ## run tests outside of docker
-	[ -e node_modules ] || npm ci 
-	npm run test
+test: ## run tests
+	go test ./...
+
+.PHONY: lint
+lint: ## run go vet
+	go vet ./...
 
 .PHONY: help
 help:

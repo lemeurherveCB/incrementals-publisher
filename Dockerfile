@@ -1,21 +1,19 @@
-ARG NODEJS_VERSION=24.18.1
-FROM node:${NODEJS_VERSION}
+FROM golang:1.26-alpine AS builder
 
-ENV NODE_ENV production
+WORKDIR /build
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" \
+    -o /incrementals-publisher ./cmd/incrementals-publisher
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
 ENV PORT 3000
 EXPOSE 3000
 
-# Create app directory
-WORKDIR /usr/src/app
+COPY --from=builder /incrementals-publisher /incrementals-publisher
 
-# Install app dependencies
-# A wildcard is used to ensure both package.json AND package-lock.json are copied
-# where available (npm@5+)
-COPY package*.json ./
-
-RUN npm ci
-
-# Bundle app source
-COPY . .
-
-CMD [ "node", "index.js" ]
+ENTRYPOINT ["/incrementals-publisher"]
