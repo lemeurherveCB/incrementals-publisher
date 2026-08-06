@@ -3,14 +3,12 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
-	gogithub "github.com/google/go-github/v66/github"
-	"golang.org/x/oauth2"
-
 	"github.com/bradleyfalzon/ghinstallation/v2"
-	"net/http"
+	gogithub "github.com/google/go-github/v66/github"
 )
 
 // Client wraps the GitHub API for incrementals operations.
@@ -115,18 +113,3 @@ func text(entries []ArtifactEntry) string {
 }
 
 func ptr[T any](v T) *T { return &v }
-
-// tokenSource is a simple oauth2.TokenSource that always returns the same token.
-// Used for tests / personal-access-token auth if needed.
-type tokenSource struct{ token string }
-
-func (t *tokenSource) Token() (*oauth2.Token, error) {
-	return &oauth2.Token{AccessToken: t.token}, nil
-}
-
-// NewClientWithToken creates a client using a plain PAT (for testing).
-func NewClientWithToken(token string) *Client {
-	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
-	httpClient := oauth2.NewClient(context.Background(), ts)
-	return &Client{gh: gogithub.NewClient(httpClient)}
-}

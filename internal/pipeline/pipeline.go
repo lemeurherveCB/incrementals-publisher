@@ -77,6 +77,9 @@ func ProcessBuildMetadata(data []byte) BuildMetadata {
 	return BuildMetadata{}
 }
 
+// ProcessFolderMetadata extracts owner/repo from the Jenkins folder API response.
+// If the folder has multiple SCM sources the loop takes the last one — matching
+// the JS forEach behaviour. In practice pipelines have a single source.
 func ProcessFolderMetadata(data []byte) FolderMetadata {
 	var resp FolderAPIResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
@@ -90,6 +93,11 @@ func ProcessFolderMetadata(data []byte) FolderMetadata {
 	return result
 }
 
+// GetBuildAPIURL returns the Jenkins API URL for build metadata.
+// Note: the tree filter only requests SCMRevisionAction fields (revision[hash,pullHash]);
+// it does not include build[revision[SHA1]] for hudson.plugins.git.util.BuildDetails.
+// This mirrors the JS getBuildApiUrl behaviour — the BuildDetails fallback in
+// ProcessBuildMetadata is therefore unreachable via this default URL.
 func GetBuildAPIURL(buildURL string) string {
 	return buildURL + "api/json?tree=actions[revision[hash,pullHash]]"
 }

@@ -29,6 +29,14 @@ const version = "1.4.2"
 // Build number: digits only. Must end with exactly one slash.
 var buildURLPathRe = regexp.MustCompile(`^(/job/[a-zA-Z0-9._-]+)+/[0-9]+/$`)
 
+// httpClient is the shared client used for Jenkins and Artifactory calls.
+// The JS version used node-fetch without explicit timeouts in the main path;
+// we set one here to avoid hanging handler goroutines on slow upstreams.
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+// readinessHTTPClient is the dedicated client for the /readiness Jenkins probe.
+var readinessHTTPClient = &http.Client{Timeout: 5 * time.Second}
+
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
@@ -97,8 +105,7 @@ func readinessHandler(log *slog.Logger) http.HandlerFunc {
 		} else {
 			req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, strings.TrimRight(config.JenkinsHost(), "/")+"/whoAmI/api/json", nil)
 			req.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(jenkinsAuth)))
-			hc := &http.Client{Timeout: 5 * time.Second}
-			res, err := hc.Do(req)
+			res, err := readinessHTTPClient.Do(req)
 			if err != nil || res.StatusCode != http.StatusOK {
 				log.Error("Jenkins healthcheck failed", "error", err)
 				resp.Errors = append(resp.Errors, "jenkins")
@@ -117,7 +124,14 @@ type publishRequest struct {
 	BuildURL string `json:"build_url"`
 }
 
-func publishHandler(log *slog.Logger, ghClient *gogithub.Client) http.HandlerFunc {
+// githubClient is the subset of gogithub.Client used by publishHandler,
+// defined as an interface so tests can inject a stub without a real GitHub App.
+type githubClient interface {
+	CommitExists(ctx context.Context, owner, repo, ref string) (bool, error)
+	CreateCheckRun(ctx context.Context, owner, repo, headSHA string, entries []gogithub.ArtifactEntry) error
+}
+
+func publishHandler(log *slog.Logger, ghClient githubClient) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// --- Authentication ---
 		authHeader := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
@@ -258,7 +272,7 @@ func publishHandler(log *slog.Logger, ghClient *gogithub.Client) http.HandlerFun
 		}
 
 		// --- Upload to Artifactory ---
-		uploadStatus, uploadText, err := uploadToArtifactory(ctx, archivePath, pomURL)
+		uploadStatus, uploadText, err := uploadToArtifactory(ctx, archivePath)
 		if err != nil {
 			log.Error("upload failed", "error", err)
 			http.Error(w, "upload to Artifactory failed: "+err.Error(), http.StatusBadGateway)
@@ -294,15 +308,17 @@ func publishHandler(log *slog.Logger, ghClient *gogithub.Client) http.HandlerFun
 }
 
 // validateBuildURL checks that buildURL belongs to JENKINS_HOST and has a valid path.
+// Error message text is preserved from the JS version (IncrementalsPlugin.isValidUrl)
+// because it is part of the HTTP response body and callers may depend on it.
 func validateBuildURL(buildURL string) error {
 	parsed, err := url.Parse(buildURL)
 	if err != nil {
-		return fmt.Errorf("This build_url is malformed")
+		return fmt.Errorf("This build_url is malformed") //nolint:stylecheck
 	}
 
 	jenkinsHost, _ := url.Parse(config.JenkinsHost())
 	if parsed.Scheme+"://"+parsed.Host != jenkinsHost.Scheme+"://"+jenkinsHost.Host {
-		return fmt.Errorf("This build_url is not supported")
+		return fmt.Errorf("This build_url is not supported") //nolint:stylecheck
 	}
 
 	// Reject raw path traversal sequences before regex validation.
@@ -314,11 +330,11 @@ func validateBuildURL(buildURL string) error {
 		strings.Contains(rawPath, "%") || // percent-encoded chars disallowed
 		strings.Contains(rawPath, "?") || strings.Contains(rawPath, "#") ||
 		strings.Contains(rawPath, "//") {
-		return fmt.Errorf("This build_url is malformed")
+		return fmt.Errorf("This build_url is malformed") //nolint:stylecheck
 	}
 
 	if !buildURLPathRe.MatchString(parsed.Path) {
-		return fmt.Errorf("This build_url is malformed")
+		return fmt.Errorf("This build_url is malformed") //nolint:stylecheck
 	}
 	return nil
 }
@@ -341,7 +357,7 @@ func fetchJSON(ctx context.Context, rawURL string, headers map[string]string) ([
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +387,7 @@ func downloadToTemp(ctx context.Context, rawURL string, headers map[string]strin
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", nil, err
 	}
@@ -391,7 +407,10 @@ func downloadToTemp(ctx context.Context, rawURL string, headers map[string]strin
 	return name, func() { os.Remove(name) }, nil
 }
 
-func uploadToArtifactory(ctx context.Context, archivePath, _ string) (int, string, error) {
+// uploadToArtifactory always uploads to config.INCREMENTAL_URL/archive.zip
+// using Artifactory's X-Explode-Archive header — same as the JS version which
+// also ignored pomURL and used config.INCREMENTAL_URL + "archive.zip" directly.
+func uploadToArtifactory(ctx context.Context, archivePath string) (int, string, error) {
 	uploadURL := config.IncrementalURL() + "archive.zip"
 	f, err := os.Open(archivePath)
 	if err != nil {
@@ -407,7 +426,7 @@ func uploadToArtifactory(ctx context.Context, archivePath, _ string) (int, strin
 	req.Header.Set("X-Explode-Archive-Atomic", "true")
 	req.Header.Set("X-JFrog-Art-Api", config.ArtifactoryKey())
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return 0, "", fmt.Errorf("uploading to Artifactory: %w", err)
 	}
