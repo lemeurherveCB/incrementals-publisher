@@ -79,13 +79,12 @@ Jenkins.
 
 == Testing
 
-Unit tests can simply be run by executing `make check` in this directory.
+Unit tests can simply be run by executing `make test` in this directory.
 
 For acceptance testing, please set the appropriate <<env>> in a terminal and
 then execute `make run` in the repository root directory.
 
-Once the Azure Functions container has come online, requests can be sent to the
-Function, for example:
+Once the container has come online, requests can be sent to the service, for example:
 
 [source,bash]
 ----
